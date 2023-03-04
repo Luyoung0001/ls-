@@ -64,9 +64,14 @@ void do_myls() {
         if ((Vec & r) == r) {  // 逆序
             do_r(filenames, file_cnt);
         }
-        printf("当前路径%s:\n", dirname[i]);
+        printf("当前路径:\"%s\"\n", dirname[i]);
         int tag = 0;  // 换行
         for (int j = 0; j < file_cnt; j++) {
+            char path[64] = {0};
+            strcpy(path, dirname[i]);
+            int len = strlen(dirname[i]);
+            strcpy(&path[len], "/");
+            strcpy(&path[len + 1], filenames[j]);
             tag++;
             if ((Vec & a) == 0) {
                 if ((strcmp(filenames[j], ".") == 0 ||
@@ -75,10 +80,7 @@ void do_myls() {
                 }
             }
             struct stat info;
-            int ans = stat(filenames[j], &info); // 拉进 info
-            if (ans == -1) {
-                perror(filenames[j]);
-            }
+            stat(filenames[j], &info);  // 拉进 info
             if ((Vec & I) == I) {
                 do_i(filenames[j]);
             }
@@ -86,8 +88,7 @@ void do_myls() {
                 do_s(filenames[j]);
             }
             if ((Vec & l) == 0) {
-                if (S_ISDIR(
-                        info.st_mode))  // 判断是否为目录，如果是目录就进入递归
+                if (S_ISDIR(info.st_mode))  // 判断是否为目录
                 {
                     printf(GREEN "%s\t" NONE, filenames[j]);
                 } else {
