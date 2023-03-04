@@ -36,21 +36,14 @@ char* uid_to_name(uid_t);
 void do_i(char filename[]);
 void do_s(char filename[]);
 void do_name(char dirname[]);
-void do_t(char dirname[]);
-void sort_t(char* filenames[]);
 void do_myls();
-// 设计可选参数向量
+void do_t(char **filenames);
 int Vec = 0;
-// 存储dirname
-char* dirname[2018];
-// 存放文件夹参数的数量
+char* dirname[4096*128];
 int dirlen = 0;
-// 文件名,初始化
-char* filenames[2048];
-// 某个目录中文件的个数
+char* filenames[4096*128];
 int file_cnt = 0;
 int main(int argc, char* argv[]) {
-    // 处理所有的参数
     tags_cal(argc, argv);
     do_myls();
     return 0;
@@ -59,7 +52,7 @@ void do_myls() {
     for (int i = 0; i < dirlen; i++) {
         do_name(dirname[i]);   // 且自动字典排序
         if ((Vec & t) == t) {  // 时间排序
-            do_t(filenames[i]);
+            do_t(filenames);
         }
         if ((Vec & r) == r) {  // 逆序
             do_r(filenames, file_cnt);
@@ -67,7 +60,8 @@ void do_myls() {
         printf("当前路径:\"%s\"\n", dirname[i]);
         int tag = 0;  // 换行
         for (int j = 0; j < file_cnt; j++) {
-            char path[64] = {0};
+            // 拼凑文件名
+            char path[4096] = {0};
             strcpy(path, dirname[i]);
             int len = strlen(dirname[i]);
             strcpy(&path[len], "/");
@@ -75,17 +69,29 @@ void do_myls() {
             tag++;
             if ((Vec & a) == 0) {
                 if ((strcmp(filenames[j], ".") == 0 ||
-                     strcmp(filenames[j], "..") == 0)) {
+                     strcmp(filenames[j], "..") == 0) ||
+                    filenames[j][0] == '.') {
                     continue;
                 }
             }
             struct stat info;
-            stat(filenames[j], &info);  // 拉进 info
+            stat(path, &info);  // 拉进 info
+            if (S_ISDIR(info.st_mode) && ((Vec & R) == R)) {
+                // 如果是目录,那就直接拉进 dirnames:"dirname/filename"
+                char* tempdirname = (char*)malloc(sizeof(char) * 4096);
+                
+                strcpy(tempdirname, dirname[i]);
+                int len = strlen(tempdirname);
+                strcpy(&tempdirname[len], "/");
+                strcpy(&tempdirname[len + 1], filenames[j]);
+
+                dirname[dirlen++] = tempdirname;
+            }
             if ((Vec & I) == I) {
-                do_i(filenames[j]);
+                do_i(path);
             }
             if ((Vec & s) == s) {
-                do_s(filenames[j]);
+                do_s(path);
             }
             if ((Vec & l) == 0) {
                 if (S_ISDIR(info.st_mode))  // 判断是否为目录
@@ -117,13 +123,18 @@ void do_myls() {
                 printf("\n");
             }
         }
+        // 清空容器
+        for (int k = 0; k < file_cnt; k++) {
+            memset(filenames[k], 1024, '\0');
+        }
+        file_cnt = 0;
     }
 }
 void tags_cal(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
         if (argv[i][0] !=
             '-') {  // 只接受以'-'开头的参数,其它参数要么错误,要么是文件夹名称或文件名
-            char* tempdirname = (char*)malloc(sizeof(char) * 1024);
+            char* tempdirname = (char*)malloc(sizeof(char) * 4096);
             strcpy(tempdirname, argv[i]);
             dirname[dirlen++] = tempdirname;
         } else {
@@ -160,21 +171,9 @@ void tags_cal(int argc, char* argv[]) {
     }
     if (dirlen == 0) {
         dirlen = 1;
-        char* tempdirname = (char*)malloc(sizeof(char) * 1024);
+        char* tempdirname = (char*)malloc(sizeof(char) * 2048);
         strcpy(tempdirname, ".");
         dirname[0] = tempdirname;
-    }
-}
-void do_t(char dirname[]) {
-    DIR* dir_ptr;
-    struct dirent* direntp;
-    if ((dir_ptr = opendir(dirname)) == NULL)
-        fprintf(stderr, "lsl:cannot open %s\n", dirname);
-    else {
-        while ((direntp = readdir(dir_ptr))) {
-            restored_ls(direntp);
-        }
-        sort_t(filenames);
     }
 }
 void do_i(char filename[]) {
@@ -248,7 +247,8 @@ int compare(char* s1, char* s2) {
     return *s1 - *s2;
 }
 void restored_ls(struct dirent* cur_item) {
-    char* result = cur_item->d_name;
+    char* result = (char*)malloc(sizeof(char)*4096);
+    strcpy(result,cur_item->d_name);
     filenames[file_cnt++] = result;
 }
 void mode_to_letters(int mode, char str[]) {
@@ -301,26 +301,18 @@ char* uid_to_name(gid_t uid) {
         return pw_ptr->pw_name;
     }
 }
-void sort_t(char* filenames[]) {
-    // 创建 stat数组
-    struct stat* stats = (struct stat*)malloc(sizeof(struct stat) * (file_cnt));
-    // 提取 info
-    for (int i = 0; i < file_cnt; i++) {
-        if (filenames[i][0] == '.') {
-            continue;
-        }
-        struct stat info;
-        if (stat(filenames[i], &info) == -1) {
-            perror(filenames[i]);
-        }
-        stats[i] = info;
-    }
-    for (int i = 1; i < file_cnt - 1; i++) {
+void do_t(char** filenames) {
+    char temp[2048] = {0};
+    struct stat info1;
+    struct stat info2;
+    for (int i = 0; i < file_cnt - 1; i++) {
         for (int j = i + 1; j < file_cnt; j++) {
-            if (stats[i].st_mtime > stats[j].st_mtime) {
-                struct stat temp = stats[i];
-                stats[i] = stats[j];
-                stats[j] = temp;
+            stat(filenames[i], &info1);
+            stat(filenames[j], &info2);
+            if (info1.st_mtime < info2.st_mtime) {
+                strcpy(temp, filenames[i]);
+                strcpy(filenames[i], filenames[j]);
+                strcpy(filenames[j], temp);
             }
         }
     }
@@ -337,4 +329,3 @@ void do_r(char** arr, int file_cnt) {
         right--;  // 尾指针往前走
     }
 }
-// -R
