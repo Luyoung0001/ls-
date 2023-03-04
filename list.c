@@ -35,13 +35,13 @@ char* uid_to_name(uid_t);
 // ********函数声明********
 void do_i(char filename[]);
 void do_s(char filename[]);
-void do_name(char dirname[]);
+int do_name(char dirname[]);
 void do_myls();
-void do_t(char **filenames);
+void do_t(char** filenames);
 int Vec = 0;
-char* dirname[4096*128];
+char* dirname[4096 * 128];
 int dirlen = 0;
-char* filenames[4096*128];
+char* filenames[4096 * 128];
 int file_cnt = 0;
 int main(int argc, char* argv[]) {
     tags_cal(argc, argv);
@@ -50,7 +50,10 @@ int main(int argc, char* argv[]) {
 }
 void do_myls() {
     for (int i = 0; i < dirlen; i++) {
-        do_name(dirname[i]);   // 且自动字典排序
+        if (do_name(dirname[i]) == -1) {
+            continue;
+        }
+        // 且自动字典排序
         if ((Vec & t) == t) {  // 时间排序
             do_t(filenames);
         }
@@ -79,12 +82,10 @@ void do_myls() {
             if (S_ISDIR(info.st_mode) && ((Vec & R) == R)) {
                 // 如果是目录,那就直接拉进 dirnames:"dirname/filename"
                 char* tempdirname = (char*)malloc(sizeof(char) * 4096);
-                
                 strcpy(tempdirname, dirname[i]);
                 int len = strlen(tempdirname);
                 strcpy(&tempdirname[len], "/");
                 strcpy(&tempdirname[len + 1], filenames[j]);
-
                 dirname[dirlen++] = tempdirname;
             }
             if ((Vec & I) == I) {
@@ -125,7 +126,7 @@ void do_myls() {
         }
         // 清空容器
         for (int k = 0; k < file_cnt; k++) {
-            memset(filenames[k], 1024, '\0');
+            memset(filenames[k], 4096, '\0');
         }
         file_cnt = 0;
     }
@@ -188,13 +189,14 @@ void do_s(char filename[]) {
         perror(filename);
     printf("%4ld\t", info.st_size / 4096 * 4 + (info.st_size % 4096 ? 4 : 0));
 }
-void do_name(char dirname[]) {
+int do_name(char dirname[]) {
     int i = 0;
     int len = 0;
     DIR* dir_ptr;
     struct dirent* direntp;
     if ((dir_ptr = opendir(dirname)) == NULL) {
-        fprintf(stderr, "lsl:cannot open %s\n", dirname);
+        fprintf(stderr, "权限不够,cannot open: %s\n", dirname);
+        return -1;
     } else {
         while ((direntp = readdir(dir_ptr))) {
             restored_ls(direntp);
@@ -203,7 +205,7 @@ void do_name(char dirname[]) {
     }
     printf("\n");
     closedir(dir_ptr);
-    return;
+    return 1;
 }
 void sort(char** filenames, int start, int end) {
     if (start < end) {
@@ -247,8 +249,8 @@ int compare(char* s1, char* s2) {
     return *s1 - *s2;
 }
 void restored_ls(struct dirent* cur_item) {
-    char* result = (char*)malloc(sizeof(char)*4096);
-    strcpy(result,cur_item->d_name);
+    char* result = (char*)malloc(sizeof(char) * 4096);
+    strcpy(result, cur_item->d_name);
     filenames[file_cnt++] = result;
 }
 void mode_to_letters(int mode, char str[]) {
